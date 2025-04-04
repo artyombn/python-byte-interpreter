@@ -241,6 +241,8 @@ class VirtualMachine(object):
             log.exception("Caught exception during execution")
             why = 'exception'
 
+        print(f"VM instruction: {why}")
+
         return why
 
     def manage_block_stack(self, why):
@@ -436,6 +438,10 @@ class VirtualMachine(object):
 
     def byte_LOAD_LOCALS(self):
         self.push(self.frame.f_locals)
+
+# yield/async/await, starting from Python ^3.11
+    def byte_RESUME(self, arg):
+        pass
 
     ## Operators
 
