@@ -60,6 +60,21 @@ class VirtualMachine(object):
         'INVERT': operator.invert,
     }
 
+    _INPLACE_OPERATORS = {
+        'ADD': operator.iadd,
+        'SUBTRACT': operator.isub,
+        'MULTIPLY': operator.imul,
+        'TRUE_DIVIDE': operator.itruediv,
+        'FLOOR_DIVIDE': operator.ifloordiv,
+        'MODULO': operator.imod,
+        'POWER': operator.ipow,
+        'LSHIFT': operator.ilshift,
+        'RSHIFT': operator.irshift,
+        'AND': operator.iand,
+        'XOR': operator.ixor,
+        'OR': operator.ior,
+    }
+
     def __init__(self):
         # The call stack of frames.
         self.frames = []
@@ -530,6 +545,15 @@ class VirtualMachine(object):
         if op_name not in self._UNARY_OPERATORS:
             raise VirtualMachineError(f"Unsupported unary op: {op_name}")
         result = self._UNARY_OPERATORS[op_name](x)
+        self.push(result)
+
+    def byte_INPLACE_OP(self, arg):
+        right = self.pop()
+        left = self.pop()
+        op_name = dis._nb_ops[arg][0].upper()
+        if op_name not in self._INPLACE_OPERATORS:
+            raise VirtualMachineError(f"Unsupported inplace op: {op_name}")
+        result = self._INPLACE_OPERATORS[op_name](left, right)
         self.push(result)
 
     ## Attributes and indexing
