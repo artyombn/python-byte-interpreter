@@ -9,6 +9,7 @@ import linecache
 import logging
 import operator
 import sys
+import types
 
 import six
 from six.moves import reprlib
@@ -36,6 +37,22 @@ class VirtualMachineError(Exception):
 
 
 class VirtualMachine(object):
+
+    _BINARY_OPERATIONS = {
+        '+': operator.add,
+        '-': operator.sub,
+        '*': operator.mul,
+        '/': operator.truediv,
+        '//': operator.floordiv,
+        '%': operator.mod,
+        '**': operator.pow,
+        '<<': operator.lshift,
+        '>>': operator.rshift,
+        '&': operator.and_,
+        '^': operator.xor,
+        '|': operator.or_,
+    }
+
     def __init__(self):
         # The call stack of frames.
         self.frames = []
@@ -165,39 +182,61 @@ class VirtualMachine(object):
             self.last_exception = exctype, value, tb
 
     def parse_byte_and_args(self):
-        """ Parse 1 - 3 bytes of bytecode into
-        an instruction and optionally arguments."""
+        """Parse 2 bytes of bytecode into an instruction and optional arguments."""
         f = self.frame
         opoffset = f.f_lasti
-        byteCode = byteint(f.f_code.co_code[opoffset])
+        # print(f"f.f_lasti before: {opoffset}")
+        # print(f"f.f_code.co_code = {f.f_code.co_code}")
+
+        if f.f_lasti >= len(f.f_code.co_code):
+            return "NOP", [], opoffset
+
+        byteCode = f.f_code.co_code[f.f_lasti]
         f.f_lasti += 1
         byteName = dis.opname[byteCode]
         arg = None
         arguments = []
         if byteCode >= dis.HAVE_ARGUMENT:
-            arg = f.f_code.co_code[f.f_lasti:f.f_lasti+2]
-            f.f_lasti += 2
-            intArg = byteint(arg[0]) + (byteint(arg[1]) << 8)
-            if byteCode in dis.hasconst:
+            if f.f_lasti >= len(f.f_code.co_code):
+                raise VirtualMachineError("Not enough bytes for instruction argument")
+            intArg = f.f_code.co_code[f.f_lasti]
+            f.f_lasti += 1
+
+            print(f"Parsing: {byteName} with intArg={intArg}")
+
+            # Обрабатываем только те инструкции hasconst, которые загружают константы
+            if byteCode in dis.hasconst and byteCode != dis.opmap["RETURN_CONST"]:
+                if intArg >= len(f.f_code.co_consts):
+                    raise VirtualMachineError(f"Invalid constant index {intArg}")
                 arg = f.f_code.co_consts[intArg]
+            elif byteCode in dis.hasname:
+                if intArg >= len(f.f_code.co_names):
+                    raise VirtualMachineError(f"Invalid name index {intArg}")
+                arg = f.f_code.co_names[intArg]
+            elif byteCode in dis.haslocal:
+                if intArg >= len(f.f_code.co_varnames):
+                    raise VirtualMachineError(f"Invalid local variable index {intArg}")
+                arg = f.f_code.co_varnames[intArg]
             elif byteCode in dis.hasfree:
                 if intArg < len(f.f_code.co_cellvars):
                     arg = f.f_code.co_cellvars[intArg]
                 else:
                     var_idx = intArg - len(f.f_code.co_cellvars)
+                    if var_idx >= len(f.f_code.co_freevars):
+                        raise VirtualMachineError(f"Invalid free variable index {var_idx}")
                     arg = f.f_code.co_freevars[var_idx]
-            elif byteCode in dis.hasname:
-                arg = f.f_code.co_names[intArg]
             elif byteCode in dis.hasjrel:
                 arg = f.f_lasti + intArg
             elif byteCode in dis.hasjabs:
                 arg = intArg
-            elif byteCode in dis.haslocal:
-                arg = f.f_code.co_varnames[intArg]
+            elif byteCode in (dis.opmap["CALL"], dis.opmap["RETURN_CONST"]):
+                arg = intArg  # Передаём число напрямую для CALL и RETURN_CONST
             else:
                 arg = intArg
             arguments = [arg]
 
+        # print(f"f.f_lasti after: {f.f_lasti}")
+        print(f"--- Stack after parsing: {f.stack}")
         return byteName, arguments, opoffset
 
     def log(self, byteName, arguments, opoffset):
@@ -218,6 +257,7 @@ class VirtualMachine(object):
         Exceptions are caught and set on the virtual machine."""
         why = None
         try:
+            print(f"--- Dispatching: {byteName} with arguments: {arguments}")
             if byteName.startswith('UNARY_'):
                 self.unaryOperator(byteName[6:])
             elif byteName.startswith('BINARY_'):
@@ -241,7 +281,13 @@ class VirtualMachine(object):
             log.exception("Caught exception during execution")
             why = 'exception'
 
-        print(f"VM instruction: {why}")
+        if why == True:
+            print(f"********************************")
+            print(f"Frame completed normally with return value: {self.return_value}")
+            print(f"Current stack: {self.frame.stack}")
+            print(f"********************************")
+        elif why == 'exception':
+            print(f"Frame interrupted due to exception: {self.last_exception[1]}")
 
         return why
 
@@ -315,6 +361,8 @@ class VirtualMachine(object):
         Exceptions are raised, the return value is returned.
 
         """
+
+        print(f"Running frame: {frame.f_code.co_name}")
         self.push_frame(frame)
         while True:
             byteName, arguments, opoffset = self.parse_byte_and_args()
@@ -442,6 +490,44 @@ class VirtualMachine(object):
 # yield/async/await, starting from Python ^3.11
     def byte_RESUME(self, arg):
         pass
+
+    def byte_CACHE(self):
+        pass
+
+    def byte_PUSH_NULL(self):
+        # Добавляет None на стек
+        self.push(None)
+
+    def byte_CALL(self, arg):
+        if arg is None:
+            raise VirtualMachineError("CALL instruction received None as argument")
+        # Извлекаем аргументы в правильном порядке (с конца стека, но разворачиваем)
+        args = [self.frame.stack.pop() for _ in range(arg)][::-1]  # Разворачиваем список
+        # Извлекаем функцию
+        func = self.frame.stack.pop()
+        # Проверяем и убираем None, добавленный PUSH_NULL
+        if len(self.frame.stack) > 0 and self.frame.stack[-1] is None:
+            self.frame.stack.pop()
+        # Выполняем вызов функции
+        result = func(*args)
+        # Помещаем результат на стек
+        self.frame.stack.append(result)
+
+    def byte_BINARY_OP(self, arg):
+        right = self.pop()
+        left = self.pop()
+        op_symbol = dis._nb_ops[arg][1]
+
+        if op_symbol not in self._BINARY_OPERATIONS:
+            raise VirtualMachineError(f"Unsupported binary op: {op_symbol}")
+
+        result = self._BINARY_OPERATIONS[op_symbol](left, right)
+        self.push(result)
+
+    def byte_RETURN_CONST(self, arg):
+        # Возвращает константу из co_consts
+        self.return_value = self.frame.f_code.co_consts[arg]
+        return True
 
     ## Operators
 
@@ -901,15 +987,12 @@ class VirtualMachine(object):
 
     ## Functions
 
-    def byte_MAKE_FUNCTION(self, argc):
-        if PY3:
-            name = self.pop()
-        else:
-            name = None
+    def byte_MAKE_FUNCTION(self, arg):
+        # Извлекаем объект кода со стека
         code = self.pop()
-        defaults = self.popn(argc)
-        globs = self.frame.f_globals
-        fn = Function(name, code, globs, defaults, None, self)
+        # Создаём функцию (без дополнительных аргументов, так как arg=0)
+        fn = types.FunctionType(code, self.frame.f_globals)
+        # Помещаем функцию на стек
         self.push(fn)
 
     def byte_LOAD_CLOSURE(self, name):
