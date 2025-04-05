@@ -51,6 +51,19 @@ class VirtualMachine(object):
         '&': operator.and_,
         '^': operator.xor,
         '|': operator.or_,
+
+        '+=': operator.iadd,
+        '-=': operator.isub,
+        '*=': operator.imul,
+        '/=': operator.itruediv,
+        '//=': operator.ifloordiv,
+        '%=': operator.imod,
+        '**=': operator.ipow,
+        '<<=': operator.ilshift,
+        '>>=': operator.irshift,
+        '&=': operator.iand,
+        '^=': operator.ixor,
+        '|=': operator.ior,
     }
 
     _UNARY_OPERATORS = {
@@ -58,21 +71,6 @@ class VirtualMachine(object):
         'NEGATIVE': operator.neg,
         'NOT': operator.not_,
         'INVERT': operator.invert,
-    }
-
-    _INPLACE_OPERATORS = {
-        'ADD': operator.iadd,
-        'SUBTRACT': operator.isub,
-        'MULTIPLY': operator.imul,
-        'TRUE_DIVIDE': operator.itruediv,
-        'FLOOR_DIVIDE': operator.ifloordiv,
-        'MODULO': operator.imod,
-        'POWER': operator.ipow,
-        'LSHIFT': operator.ilshift,
-        'RSHIFT': operator.irshift,
-        'AND': operator.iand,
-        'XOR': operator.ixor,
-        'OR': operator.ior,
     }
 
     def __init__(self):
@@ -545,15 +543,6 @@ class VirtualMachine(object):
         if op_name not in self._UNARY_OPERATORS:
             raise VirtualMachineError(f"Unsupported unary op: {op_name}")
         result = self._UNARY_OPERATORS[op_name](x)
-        self.push(result)
-
-    def byte_INPLACE_OP(self, arg):
-        right = self.pop()
-        left = self.pop()
-        op_name = dis._nb_ops[arg][0].upper()
-        if op_name not in self._INPLACE_OPERATORS:
-            raise VirtualMachineError(f"Unsupported inplace op: {op_name}")
-        result = self._INPLACE_OPERATORS[op_name](left, right)
         self.push(result)
 
     ## Attributes and indexing
