@@ -258,29 +258,15 @@ class VirtualMachine(object):
         why = None
         try:
             print(f"--- Dispatching: {byteName} with arguments: {arguments}")
-            if byteName.startswith('UNARY_'):
-                self.unaryOperator(byteName[6:])
-            elif byteName.startswith('BINARY_'):
-                self.binaryOperator(byteName[7:])
-            elif byteName.startswith('INPLACE_'):
-                self.inplaceOperator(byteName[8:])
-            elif 'SLICE+' in byteName:
-                self.sliceOperator(byteName)
-            else:
-                # dispatch
-                bytecode_fn = getattr(self, 'byte_%s' % byteName, None)
-                if not bytecode_fn:            # pragma: no cover
-                    raise VirtualMachineError(
-                        "unknown bytecode type: %s" % byteName
-                    )
-                why = bytecode_fn(*arguments)
-
+            bytecode_fn = getattr(self, 'byte_%s' % byteName, None)
+            if not bytecode_fn:
+                raise VirtualMachineError("unknown bytecode type: %s" % byteName)
+            why = bytecode_fn(*arguments)
         except:
             # deal with exceptions encountered while executing the op.
             self.last_exception = sys.exc_info()[:2] + (None,)
             log.exception("Caught exception during execution")
             why = 'exception'
-
         if why == True:
             print(f"********************************")
             print(f"Frame completed normally with return value: {self.return_value}")
@@ -513,6 +499,13 @@ class VirtualMachine(object):
         # Помещаем результат на стек
         self.frame.stack.append(result)
 
+    def byte_RETURN_CONST(self, arg):
+        # Возвращает константу из co_consts
+        self.return_value = self.frame.f_code.co_consts[arg]
+        return True
+
+    ## Operators
+
     def byte_BINARY_OP(self, arg):
         right = self.pop()
         left = self.pop()
@@ -523,115 +516,6 @@ class VirtualMachine(object):
 
         result = self._BINARY_OPERATIONS[op_symbol](left, right)
         self.push(result)
-
-    def byte_RETURN_CONST(self, arg):
-        # Возвращает константу из co_consts
-        self.return_value = self.frame.f_code.co_consts[arg]
-        return True
-
-    ## Operators
-
-    UNARY_OPERATORS = {
-        'POSITIVE': operator.pos,
-        'NEGATIVE': operator.neg,
-        'NOT':      operator.not_,
-        'CONVERT':  repr,
-        'INVERT':   operator.invert,
-    }
-
-    def unaryOperator(self, op):
-        x = self.pop()
-        self.push(self.UNARY_OPERATORS[op](x))
-
-    BINARY_OPERATORS = {
-        'POWER':    pow,
-        'MULTIPLY': operator.mul,
-        'DIVIDE':   getattr(operator, 'div', lambda x, y: None),
-        'FLOOR_DIVIDE': operator.floordiv,
-        'TRUE_DIVIDE':  operator.truediv,
-        'MODULO':   operator.mod,
-        'ADD':      operator.add,
-        'SUBTRACT': operator.sub,
-        'SUBSCR':   operator.getitem,
-        'LSHIFT':   operator.lshift,
-        'RSHIFT':   operator.rshift,
-        'AND':      operator.and_,
-        'XOR':      operator.xor,
-        'OR':       operator.or_,
-    }
-
-    def binaryOperator(self, op):
-        x, y = self.popn(2)
-        self.push(self.BINARY_OPERATORS[op](x, y))
-
-    def inplaceOperator(self, op):
-        x, y = self.popn(2)
-        if op == 'POWER':
-            x **= y
-        elif op == 'MULTIPLY':
-            x *= y
-        elif op in ['DIVIDE', 'FLOOR_DIVIDE']:
-            x //= y
-        elif op == 'TRUE_DIVIDE':
-            x /= y
-        elif op == 'MODULO':
-            x %= y
-        elif op == 'ADD':
-            x += y
-        elif op == 'SUBTRACT':
-            x -= y
-        elif op == 'LSHIFT':
-            x <<= y
-        elif op == 'RSHIFT':
-            x >>= y
-        elif op == 'AND':
-            x &= y
-        elif op == 'XOR':
-            x ^= y
-        elif op == 'OR':
-            x |= y
-        else:           # pragma: no cover
-            raise VirtualMachineError("Unknown in-place operator: %r" % op)
-        self.push(x)
-
-    def sliceOperator(self, op):
-        start = 0
-        end = None          # we will take this to mean end
-        op, count = op[:-2], int(op[-1])
-        if count == 1:
-            start = self.pop()
-        elif count == 2:
-            end = self.pop()
-        elif count == 3:
-            end = self.pop()
-            start = self.pop()
-        l = self.pop()
-        if end is None:
-            end = len(l)
-        if op.startswith('STORE_'):
-            l[start:end] = self.pop()
-        elif op.startswith('DELETE_'):
-            del l[start:end]
-        else:
-            self.push(l[start:end])
-
-    COMPARE_OPERATORS = [
-        operator.lt,
-        operator.le,
-        operator.eq,
-        operator.ne,
-        operator.gt,
-        operator.ge,
-        lambda x, y: x in y,
-        lambda x, y: x not in y,
-        lambda x, y: x is y,
-        lambda x, y: x is not y,
-        lambda x, y: issubclass(x, Exception) and issubclass(x, y),
-    ]
-
-    def byte_COMPARE_OP(self, opnum):
-        x, y = self.popn(2)
-        self.push(self.COMPARE_OPERATORS[opnum](x, y))
 
     ## Attributes and indexing
 
