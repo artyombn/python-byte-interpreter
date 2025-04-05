@@ -234,6 +234,8 @@ class VirtualMachine(object):
             if f.f_lasti >= len(f.f_code.co_code):
                 raise VirtualMachineError("Not enough bytes for instruction argument")
             intArg = f.f_code.co_code[f.f_lasti]
+            if byteCode == dis.opmap["COMPARE_OP"]:
+                intArg = intArg >> 4 # для версии 3.12.2
             f.f_lasti += 1
 
             print(f"Parsing: {byteName} with intArg={intArg}")
