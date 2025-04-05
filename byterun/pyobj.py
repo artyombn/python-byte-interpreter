@@ -155,25 +155,9 @@ class Frame(object):
 
         self.f_lineno = f_code.co_firstlineno
         self.f_lasti = 0
-
-        if f_code.co_cellvars:
-            self.cells = {}
-            if not f_back.cells:
-                f_back.cells = {}
-            for var in f_code.co_cellvars:
-                # Make a cell for the variable in our locals, or None.
-                cell = Cell(self.f_locals.get(var))
-                f_back.cells[var] = self.cells[var] = cell
-        else:
-            self.cells = None
-
-        if f_code.co_freevars:
-            if not self.cells:
-                self.cells = {}
-            for var in f_code.co_freevars:
-                assert self.cells is not None
-                assert f_back.cells, "f_back.cells: %r" % (f_back.cells,)
-                self.cells[var] = f_back.cells[var]
+        self.cells = None
+        self.block_stack = []
+        self.generator = None
 
         self.block_stack = []
         self.generator = None
