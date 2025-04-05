@@ -1,14 +1,15 @@
 [tool.poetry]
 name = "python-byte-interpreter"
 version = "0.1.0"
-description = ""
+description = "Byterun modernized version - Python interpreter adapted for the latest stable Python version"
 authors = ["Artem Balabashin <balabashinan@gmail.com>"]
 readme = "README.md"
 package-mode = false
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.12"
 jupyter = "^1.1.1"
+pytest = "^8.3.5"
 
 [build-system]
 requires = ["poetry-core"]
