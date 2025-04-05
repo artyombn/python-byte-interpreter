@@ -53,6 +53,13 @@ class VirtualMachine(object):
         '|': operator.or_,
     }
 
+    _UNARY_OPERATORS = {
+        'POSITIVE': operator.pos,
+        'NEGATIVE': operator.neg,
+        'NOT': operator.not_,
+        'INVERT': operator.invert,
+    }
+
     def __init__(self):
         # The call stack of frames.
         self.frames = []
@@ -515,6 +522,14 @@ class VirtualMachine(object):
             raise VirtualMachineError(f"Unsupported binary op: {op_symbol}")
 
         result = self._BINARY_OPERATIONS[op_symbol](left, right)
+        self.push(result)
+
+    def byte_UNARY_OP(self, arg):
+        x = self.pop()
+        op_name = dis._unary_ops[arg][0].upper()
+        if op_name not in self._UNARY_OPERATORS:
+            raise VirtualMachineError(f"Unsupported unary op: {op_name}")
+        result = self._UNARY_OPERATORS[op_name](x)
         self.push(result)
 
     ## Attributes and indexing
