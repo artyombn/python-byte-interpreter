@@ -73,6 +73,20 @@ class VirtualMachine(object):
         'INVERT': operator.invert,
     }
 
+    _COMPARE_OPERATORS = {
+        0: operator.lt,  # <
+        1: operator.le,  # <=
+        2: operator.eq,  # ==
+        3: operator.ne,  # !=
+        4: operator.gt,  # >
+        5: operator.ge,  # >=
+        6: lambda a, b: a in b,  # `in` handled directly without operator
+        7: lambda a, b: a not in b,  # `not in` handled directly without operator
+        8: operator.is_,  # is
+        9: operator.is_not,  # is not
+        10: lambda a, b: issubclass(a, Exception) and issubclass(a, b),  # exception match
+    }
+
     def __init__(self):
         # The call stack of frames.
         self.frames = []
@@ -370,6 +384,7 @@ class VirtualMachine(object):
 
         print(f"Running frame: {frame.f_code.co_name}")
         self.push_frame(frame)
+        print(f"Bytecode: {list(frame.f_code.co_code)}")
         while True:
             byteName, arguments, opoffset = self.parse_byte_and_args()
             if log.isEnabledFor(logging.INFO):
@@ -543,6 +558,16 @@ class VirtualMachine(object):
         if op_name not in self._UNARY_OPERATORS:
             raise VirtualMachineError(f"Unsupported unary op: {op_name}")
         result = self._UNARY_OPERATORS[op_name](x)
+        self.push(result)
+
+    def byte_COMPARE_OP(self, opnum):
+        right = self.pop()
+        left = self.pop()
+        print(f"Comparing: left={left}, right={right}, opnum={opnum}")
+        if opnum not in self._COMPARE_OPERATORS:
+            print(f"Unsupported opnum {opnum}. Available operators: {list(self._COMPARE_OPERATORS.keys())}")
+            raise VirtualMachineError(f"Unsupported comparison op: {opnum}")
+        result = self._COMPARE_OPERATORS[opnum](left, right)
         self.push(result)
 
     ## Attributes and indexing
