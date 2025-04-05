@@ -1,10 +1,10 @@
-import dis
-
 def add(a, b):
     return a + b
 
-dis.dis(add)
+print(add(2, 3))
 
-print(f"-----------------")
-print((dis.opmap.get("RESUME")))
-print((dis.opname[151]))
+
+def mod(a, b):
+    return a % b
+
+print(mod(25, 8))
