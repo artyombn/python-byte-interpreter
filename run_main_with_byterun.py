@@ -9,6 +9,8 @@ code = compile(source, filename="main.py", mode="exec")
 # dis.dis(code, show_caches=True)
 # print(list(code.co_code))
 
+# print(f"ALL COMP NAMES = {dis.cmp_op}")
+
 """
   0           0 RESUME                   0
 
