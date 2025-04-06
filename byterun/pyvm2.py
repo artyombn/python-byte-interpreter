@@ -131,7 +131,8 @@ class VirtualMachine(object):
 
     def jump(self, jump):
         """Move the bytecode pointer to `jump`, so it will execute next."""
-        self.frame.f_lasti = jump
+        print(f"Jumping from {self.frame.f_lasti} to {self.frame.f_lasti + jump} (offset={jump})")
+        self.frame.f_lasti += jump
 
     def push_block(self, type, handler=None, level=None):
         if level is None:
@@ -262,7 +263,7 @@ class VirtualMachine(object):
                         raise VirtualMachineError(f"Invalid free variable index {var_idx}")
                     arg = f.f_code.co_freevars[var_idx]
             elif byteCode in dis.hasjrel:
-                arg = f.f_lasti + intArg
+                arg = intArg
             elif byteCode in dis.hasjabs:
                 arg = intArg
             elif byteCode in (dis.opmap["CALL"], dis.opmap["RETURN_CONST"]):
@@ -572,6 +573,9 @@ class VirtualMachine(object):
         result = self._COMPARE_OPERATORS[opnum](left, right)
         self.push(result)
 
+    def byte_NOP(self, arg):
+        pass
+
     ## Attributes and indexing
 
     def byte_LOAD_ATTR(self, attr):
@@ -711,8 +715,10 @@ class VirtualMachine(object):
 
     def byte_POP_JUMP_IF_TRUE(self, jump):
         val = self.pop()
+        current_ip = self.frame.f_lasti
+        print(f"POP_JUMP_IF_TRUE: val={val}, current IP={current_ip}, raw_jump_arg={jump}")
         if val:
-            self.jump(jump)
+            self.jump(jump + 2)
 
     def byte_POP_JUMP_IF_FALSE(self, jump):
         val = self.pop()
@@ -826,12 +832,21 @@ class VirtualMachine(object):
 
     elif PY3:
         def byte_RAISE_VARARGS(self, argc):
+            print(f"VARAGS: Stack before RAISE_VARARGS: {self.frame.stack}")
+
+            if len(self.frame.stack) < argc:
+                raise Exception(f"Not enough values in the stack for RAISE_VARARGS. Stack: {self.frame.stack}")
+
             cause = exc = None
             if argc == 2:
                 cause = self.pop()
                 exc = self.pop()
             elif argc == 1:
                 exc = self.pop()
+                if isinstance(exc, type) and issubclass(exc, BaseException):
+                    exc = exc()
+
+            print(f"VARAGS: Stack after parsing: {self.frame.stack}")
             return self.do_raise(exc, cause)
 
         def do_raise(self, exc, cause):
@@ -936,6 +951,9 @@ class VirtualMachine(object):
 
     def byte_LOAD_CLOSURE(self, name):
         self.push(self.frame.cells[name])
+
+    def byte_LOAD_ASSERTION_ERROR(self):
+        self.push(AssertionError)
 
     def byte_MAKE_CLOSURE(self, argc):
         if PY3:
