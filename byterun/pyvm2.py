@@ -87,13 +87,14 @@ class VirtualMachine(object):
         10: lambda a, b: issubclass(a, Exception) and issubclass(a, b),  # exception match
     }
 
-    def __init__(self):
+    def __init__(self, debug=False):
         # The call stack of frames.
         self.frames = []
         # The current frame.
         self.frame = None
         self.return_value = None
         self.last_exception = None
+        self.debug = debug
 
     def top(self):
         """Return the value at the top of the stack, with no changes."""
@@ -131,7 +132,8 @@ class VirtualMachine(object):
 
     def jump(self, jump):
         """Move the bytecode pointer to `jump`, so it will execute next."""
-        print(f"Jumping from {self.frame.f_lasti} to {self.frame.f_lasti + jump} (offset={jump})")
+        if self.debug:
+            print(f"Jumping from {self.frame.f_lasti} to {self.frame.f_lasti + jump} (offset={jump})")
         self.frame.f_lasti += jump
 
     def push_block(self, type, handler=None, level=None):
@@ -220,8 +222,9 @@ class VirtualMachine(object):
         """Parse 2 bytes of bytecode into an instruction and optional arguments."""
         f = self.frame
         opoffset = f.f_lasti
-        # print(f"f.f_lasti before: {opoffset}")
-        # print(f"f.f_code.co_code = {f.f_code.co_code}")
+        # if self.debug:
+        #     print(f"f.f_lasti before: {opoffset}")
+        #     print(f"f.f_code.co_code = {f.f_code.co_code}")
 
         if f.f_lasti >= len(f.f_code.co_code):
             return "NOP", [], opoffset
@@ -239,7 +242,8 @@ class VirtualMachine(object):
                 intArg = intArg >> 4 # для версии 3.12.2
             f.f_lasti += 1
 
-            print(f"Parsing: {byteName} with intArg={intArg}")
+            if self.debug:
+                print(f"Parsing: {byteName} with intArg={intArg}")
 
             # Обрабатываем только те инструкции hasconst, которые загружают константы
             if byteCode in dis.hasconst and byteCode != dis.opmap["RETURN_CONST"]:
@@ -272,8 +276,9 @@ class VirtualMachine(object):
                 arg = intArg
             arguments = [arg]
 
-        # print(f"f.f_lasti after: {f.f_lasti}")
-        print(f"--- Stack after parsing: {f.stack}")
+        if self.debug:
+            # print(f"f.f_lasti after: {f.f_lasti}")
+            print(f"--- Stack after parsing: {f.stack}")
         return byteName, arguments, opoffset
 
     def log(self, byteName, arguments, opoffset):
@@ -294,7 +299,8 @@ class VirtualMachine(object):
         Exceptions are caught and set on the virtual machine."""
         why = None
         try:
-            print(f"--- Dispatching: {byteName} with arguments: {arguments}")
+            if self.debug:
+                print(f"--- Dispatching: {byteName} with arguments: {arguments}")
             bytecode_fn = getattr(self, 'byte_%s' % byteName, None)
             if not bytecode_fn:
                 raise VirtualMachineError("unknown bytecode type: %s" % byteName)
@@ -305,12 +311,14 @@ class VirtualMachine(object):
             log.exception("Caught exception during execution")
             why = 'exception'
         if why == True:
-            print(f"********************************")
-            print(f"Frame completed normally with return value: {self.return_value}")
-            print(f"Current stack: {self.frame.stack}")
-            print(f"********************************")
+            if self.debug:
+                print(f"********************************")
+                print(f"Frame completed normally with return value: {self.return_value}")
+                print(f"Current stack: {self.frame.stack}")
+                print(f"********************************")
         elif why == 'exception':
-            print(f"Frame interrupted due to exception: {self.last_exception[1]}")
+            if self.debug:
+                print(f"Frame interrupted due to exception: {self.last_exception[1]}")
 
         return why
 
@@ -384,10 +392,10 @@ class VirtualMachine(object):
         Exceptions are raised, the return value is returned.
 
         """
-
-        print(f"Running frame: {frame.f_code.co_name}")
+        if self.debug:
+            print(f"Running frame: {frame.f_code.co_name}")
+            print(f"Bytecode: {list(frame.f_code.co_code)}")
         self.push_frame(frame)
-        print(f"Bytecode: {list(frame.f_code.co_code)}")
         while True:
             byteName, arguments, opoffset = self.parse_byte_and_args()
             if log.isEnabledFor(logging.INFO):
@@ -566,9 +574,11 @@ class VirtualMachine(object):
     def byte_COMPARE_OP(self, opnum):
         right = self.pop()
         left = self.pop()
-        print(f"Comparing: left={left}, right={right}, opnum={opnum}")
+        if self.debug:
+            print(f"Comparing: left={left}, right={right}, opnum={opnum}")
         if opnum not in self._COMPARE_OPERATORS:
-            print(f"Unsupported opnum {opnum}. Available operators: {list(self._COMPARE_OPERATORS.keys())}")
+            if self.debug:
+                print(f"Unsupported opnum {opnum}. Available operators: {list(self._COMPARE_OPERATORS.keys())}")
             raise VirtualMachineError(f"Unsupported comparison op: {opnum}")
         result = self._COMPARE_OPERATORS[opnum](left, right)
         self.push(result)
@@ -716,7 +726,8 @@ class VirtualMachine(object):
     def byte_POP_JUMP_IF_TRUE(self, jump):
         val = self.pop()
         current_ip = self.frame.f_lasti
-        print(f"POP_JUMP_IF_TRUE: val={val}, current IP={current_ip}, raw_jump_arg={jump}")
+        if self.debug:
+            print(f"POP_JUMP_IF_TRUE: val={val}, current IP={current_ip}, raw_jump_arg={jump}")
         if val:
             self.jump(jump + 2)
 
@@ -832,7 +843,8 @@ class VirtualMachine(object):
 
     elif PY3:
         def byte_RAISE_VARARGS(self, argc):
-            print(f"VARAGS: Stack before RAISE_VARARGS: {self.frame.stack}")
+            if self.debug:
+                print(f"VARAGS: Stack before RAISE_VARARGS: {self.frame.stack}")
 
             if len(self.frame.stack) < argc:
                 raise Exception(f"Not enough values in the stack for RAISE_VARARGS. Stack: {self.frame.stack}")
@@ -845,8 +857,8 @@ class VirtualMachine(object):
                 exc = self.pop()
                 if isinstance(exc, type) and issubclass(exc, BaseException):
                     exc = exc()
-
-            print(f"VARAGS: Stack after parsing: {self.frame.stack}")
+            if self.debug:
+                print(f"VARAGS: Stack after parsing: {self.frame.stack}")
             return self.do_raise(exc, cause)
 
         def do_raise(self, exc, cause):
